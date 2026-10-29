@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>優才歷史時序王 - G9 Term 3</title>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <style>
+        :root {
+            --primary: #2c3e50; --accent: #e67e22; --success: #27ae60; --danger: #e74c3c; 
+            --gold: #f1c40f; --panel-bg: rgba(255, 255, 255, 0.95);
+        }
+        body { 
+            font-family: 'PingFang HK', 'Microsoft JhengHei', sans-serif; 
+            background: #cdb4db; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh;
+            touch-action: manipulation; overflow: hidden;
+        }
+        .game-container {
+            background: white; width: 92%; max-width: 480px; padding: 25px; border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.15); position: relative; z-index: 10;
+        }
+        #start-screen, #game-screen { display: flex; flex-direction: column; align-items: center; text-align: center; }
+        #game-screen { display: none; }
+        .logo { font-size: 4rem; margin-bottom: 10px; animation: floating 3s ease-in-out infinite; }
+        @keyframes floating { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .rule-box { background: #f8f9fa; padding: 15px; border-radius: 15px; text-align: left; margin: 15px 0; width: 100%; font-size: 0.85rem; line-height: 1.5; }
+        .status-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; width: 100%;}
+        .stat-box { background: #f8f9fa; padding: 8px 12px; border-radius: 10px; font-weight: bold; font-size: 0.8rem; }
+        .timer-display { font-size: 1.6rem; color: var(--accent); font-family: monospace; font-weight: bold; }
+        
+        #sortable-list { list-style: none; padding: 0; margin: 0; width: 100%; user-select: none; }
+        .item { 
+            background: white; border: 2px solid #eee; margin-bottom: 8px; padding: 12px; 
+            border-radius: 12px; font-weight: 600; cursor: grab; display: flex; align-items: center;
+            font-size: 0.95rem; box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+        }
+        .item::before { content: "⋮⋮"; margin-right: 12px; color: #ccc; flex-shrink: 0; }
+        
+        /* 年份樣式 - 答對後才顯示 */
+        .year-text { color: var(--accent); font-weight: bold; margin-left: auto; display: none; font-family: monospace; font-size: 0.85rem; }
+        .show-year .year-text { display: inline; }
+        
+        .item.correct-glow { background: #d4edda !important; border-color: #28a745 !important; color: #155724; }
+        .item.correct-glow:before { content: "✅"; color: #28a745; }
+
+        .btn { width: 100%; padding: 16px; border: none; border-radius: 50px; color: white; font-size: 1.2rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-start { background: var(--success); }
+        #submit-btn { background: var(--primary); margin-top: 15px; }
+        #next-btn { background: var(--success); margin-top: 15px; display: none; }
+        #auto-timer { font-size: 0.9rem; font-weight: normal; opacity: 0.8; }
+        
+        #feedback { text-align: center; margin-top: 8px; font-weight: bold; height: 1.2em; font-size: 0.9rem; }
+
+        #overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #2c3e50 0%, #000000 100%);
+            flex-direction: column; justify-content: center; align-items: center; z-index: 100;
+            opacity: 0; transition: opacity 0.8s ease;
+        }
+        #overlay.show { opacity: 1; display: flex; }
+        #particle-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        .result-card {
+            background: var(--panel-bg); width: 88%; max-width: 420px; padding: 20px; 
+            border-radius: 30px; text-align: center; position: relative; z-index: 2;
+            box-shadow: 0 20px 60px rgba(241, 196, 15, 0.3); border: 3px solid var(--gold);
+            transform: scale(0.8); transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        #overlay.show .result-card { transform: scale(1); }
+        .score-big { font-size: 3.5rem; color: var(--accent); margin: 0; font-weight: 800; font-family: monospace; }
+        .rank-badge { background: var(--gold); color: #fff; padding: 6px 20px; border-radius: 50px; font-weight: bold; font-size: 1.1rem; margin-bottom: 10px; display: inline-block; }
+        
+        .rank-table { background: rgba(0,0,0,0.05); border-radius: 12px; padding: 10px; text-align: left; font-size: 0.72rem; line-height: 1.3; }
+        .rank-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #ddd; padding: 3px 0; color: #555; }
+        .current-rank { color: #fff !important; font-weight: bold; background: var(--success); border-radius: 4px; padding: 2px 6px; }
+        .input-style { padding: 10px; border-radius: 20px; border: 1px solid #ccc; width: 80%; margin-bottom: 8px; text-align: center; font-size: 1rem; }
+    </style>
+</head>
+<body>
+
+<div id="overlay">
+    <canvas id="particle-canvas"></canvas>
+    <div class="result-card">
+        <h2 style="margin:0; color:var(--primary);">📜 修復成果</h2>
+        <div class="score-big" id="final-score">0</div>
+        <div class="rank-badge" id="rank-text">-</div>
+        
+        <div class="rank-table">
+            <div class="rank-row" id="r1"><span>💎 民國穿越者</span> <span>670+</span></div>
+            <div class="rank-row" id="r2"><span>🔥 史學大宗師</span> <span>620+</span></div>
+            <div class="rank-row" id="r3"><span>📜 歷史系教授</span> <span>570+</span></div>
+            <div class="rank-row" id="r4"><span>✍️ 中史科老師</span> <span>520+</span></div>
+            <div class="rank-row" id="r5"><span>🧭 5星星考生</span> <span>470+</span></div>
+            <div class="rank-row" id="r6"><span>🔍 合格線上的學生</span> <span>420+</span></div>
+            <div class="rank-row" id="r7"><span>👤 歷史課打瞌睡專家</span> <span>370+</span></div>
+            <div class="rank-row" id="r8"><span>🐣 以為珍寶島盛產珍寶珠的人</span> <span>&lt;370</span></div>
+        </div>
+
+        <div style="margin-top: 15px;">
+            <div id="name-input-group">
+                <select id="player-class" class="input-style">
+                    <option value="">--- 選擇班別 ---</option>
+                    <option value="G9A">G9A</option><option value="G9B">G9B</option>
+                    <option value="G9C">G9C</option><option value="G9D">G9D</option>
+                    <option value="G9E">G9E</option><option value="G9F">G9F</option>
+                </select>
+                <input type="text" id="player-name" placeholder="輸入你的姓名..." class="input-style">
+                <button id="sync-btn" class="btn" style="background:var(--accent); width:auto; padding:8px 25px; margin-top:8px; font-size:1rem;">提交紀錄並同步</button>
+            </div>
+            <button id="restart-btn" class="btn" style="background:var(--success); width:auto; padding:10px 30px; margin-top:10px; font-size:1rem; display:none;" onclick="location.reload()">再戰一次</button>
+        </div>
+    </div>
+</div>
+
+<div class="game-container">
+    <div id="start-screen">
+        <div class="logo">⏳</div>
+        <h1 style="color:var(--primary); margin:0; font-size: 1.8rem;">優才書院<br>歷史時序王</h1>
+        <p style="color:#7f8c8d; font-size: 0.9rem;">修復 <b>抗日至現代</b> (1936-1997年)混亂的時空線，成為大史學家！</p>
+        <div class="rule-box">
+             <b>🕹️ 玩法：</b> 手指/滑鼠拖動事件，按時間先後排列。<br>
+             <b>🏆 關卡：</b>挑戰共 10 關，每關隨機抽取 5 個歷史事件。<br>
+             <b>💡 幫助：</b>提交後，<b>正確的項目會自動鎖定</b>，助你推理。<br>
+             <b>🏆 得分：</b>每關 40 分。排錯一次扣 10 分。<br>
+             <b>⚡ 極速獎勵(只有首發全對才有啊)：</b><br>
+            • 10 秒內完成：<b>+30 分</b><br>
+            • 15 秒內完成：<b>+15 分</b><br>
+            • 25 秒內完成：<b>+5 分</b><br>
+        </div>
+        <button class="btn btn-start" id="btn-start">開始挑戰</button>
+    </div>
+
+    <div id="game-screen">
+        <div class="status-bar">
+            <div class="stat-box">Level: <span id="lv-num">1</span>/10</div>
+            <div class="timer-display" id="timer">0.0s</div>
+            <div class="stat-box">Score: <span id="score-num">0</span></div>
+        </div>
+        <div class="game-instruction" style="margin-bottom: 20px;">
+        💡 由上至下按時間先後排序
+        </div>
+        <ul id="sortable-list"></ul>
+        <div id="feedback"></div>
+        <button id="submit-btn" class="btn">提交排序</button>
+        <button id="next-btn" class="btn">下一關 <span id="auto-timer"></span></button>
+    </div>
+</div>
+
+<script>
+(function() { // 👈 IIFE 閉包開始：保護內部變數避免控制台直接篡改
+
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzOqA4HaLz7ygkZRF9Vd-97IRT4GcekyasHxY23ohJ56qvGBrObnraSJjyeQGfUQ5hL/exec"; 
+
+const masterDatabase = [
+    {text: "西安事變", year: 1936.12}, {text: "七七事變", year: 1937.0707}, 
+    {text: "廬山講話", year: 1937.0717}, {text: "八一三之役", year: 1937.08}, 
+    {text: "《共赴國難宣言》", year: 1937.0922}, {text: "平型關大捷", year: 1937.0925}, 
+    {text: "四行倉庫保衛戰", year: 1937.10}, {text: "南京大屠殺", year: 1937.12},
+    {text:"台兒莊大捷", year:1938.04}, {text:"武漢會戰", year:1938.06},
+    {text:"二戰爆發", year:1939.09}, {text:"偽國民政府成立", year:1940.03},
+    {text:"英國封鎖滇緬公路", year:1940.07}, {text:"百團大戰", year:1940.08},
+    {text:"皖南事變", year:1941.01}, {text:"《日蘇中立條約》", year:1941.04},
+    {text:"日本偷襲珍珠港", year:1941.12}, {text:"中國遠征軍入緬作戰", year:1942.03},
+    {text:"中途島海戰", year:1942.06}, {text:"《雅爾達密約》", year:1945.02},
+    {text:"原子彈投廣島", year:1945.0806}, {text:"蘇聯對日宣戰", year:1945.0808},
+    {text:"日本無條件投降", year:1945.0815}, {text:"重慶和談", year:1945.0829},
+    {text:"《雙十協定》", year:1945.10}, {text:"馬歇爾來華", year:1945.12},
+    {text:"國共停戰協定", year:1946.01}, {text:"延安失陷", year:1947.03},
+    {text:"遼瀋戰役", year:1948.09}, {text:"淮海戰役", year:1948.11},
+    {text:"平津戰役", year:1948.12}, {text:"中華人民共和國成立", year:1949.10},
+    {text:"《中蘇友好互助條約》", year:1950.02}, {text:"土地改革運動", year:1950.06},
+    {text:"抗美援朝", year:1950.10}, {text:"鎮壓反革命運動", year:1950.12}, 
+    {text:"思想改造運動", year:1951.09}, {text:"三反五反運動", year:1951.12}, 
+    {text:"第一個五年計劃", year:1953.01}, {text:"萬隆會議", year:1955.04}, 
+    {text:"赫魯曉夫清算史太林", year:1956.02}, {text:"鳴放運動", year:1957.04}, 
+    {text:"反右運動", year:1957.06}, {text:"三面紅旗", year:1958.05}, 
+    {text:"金門炮戰", year:1958.08}, {text:"三年困難時期", year:1959.01},
+    {text:"廬山會議", year:1959.07}, {text:"反右傾運動", year:1959.08},
+    {text:"三自一包", year:1962.09}, {text:"抗美援越", year:1965.04},
+    {text:"評新編歷史劇海瑞罷官", year:1965.11}, {text:"五一六通知", year:1966.05}, 
+    {text:"《炮打司令部》", year:1966.08}, {text:"一月風暴", year:1967.01},
+    {text:"三砸一燒", year:1967.06}, {text:"上山下鄉", year:1968.12}, 
+    {text:"珍寶島事件", year:1969.03}, {text:"乒乓外交", year:1971.04},
+    {text:"基辛格訪華", year:1971.07}, {text:"九一三事件", year:1971.09},
+    {text:"新中國恢復聯合國席位", year:1971.10}, {text:"尼克遜訪華", year:1972.02},
+    {text:"田中角榮訪華", year:1972.09}, {text:"批林批孔運動", year:1974.01}, 
+    {text:"反擊右傾翻案風", year:1975.11}, {text:"四五天安門事件", year:1976.04}, 
+    {text:"四人幫被捕", year:1976.10}, {text:"十一屆三中全會", year:1978.12}, 
+    {text:"中美建交", year:1979.01}, {text:"麥理浩訪華", year:1979.03}, 
+    {text:"戴卓爾夫人訪華", year:1982.09}, {text:"《中英聯合聲明》", year:1984.12}, 
+    {text:"基本法草委會成立", year:1985.07}, {text:"香港回歸", year:1997.07}
+
+];
+
+let score = 0, level = 1, startTime, timerRunning = false, correctOrder = [], currentLevelBase = 40, autoNextInterval;
+
+// --- 音效系統 (Web Audio API) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playBeep(freq, duration, type = "sine") {
+    try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    } catch(e) {}
+}
+
+const sounds = {
+    click: () => playBeep(600, 0.1),
+    correct: () => { playBeep(880, 0.1); setTimeout(() => playBeep(1100, 0.2), 100); },
+    wrong: () => { playBeep(300, 0.2, "sawtooth"); },
+    finish: () => { 
+        [440, 554, 659, 880].forEach((f, i) => {
+            setTimeout(() => playBeep(f, 0.2), i * 150);
+        });
+    }
+};
+
+function formatYearString(val) {
+    let s = val.toFixed(4); 
+    let parts = s.split('.');
+    let year = parts[0] + "年";
+    
+    if (!parts[1] || parseInt(parts[1]) === 0) return year;
+
+    let monthStr = parts[1].substring(0, 2);
+    let month = parseInt(monthStr);
+    
+    let dayStr = parts[1].substring(2, 4);
+    let day = parseInt(dayStr);
+
+    let result = year + month + "月";
+    if (day > 0) result += day + "日";
+    
+    return result;
+}
+
+function startGame() {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    sounds.click();
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('game-screen').style.display = 'flex';
+    startLevel();
+}
+
+function startLevel() {
+    if (level > 10) return finishGame();
+    clearAutoNext();
+    document.getElementById('lv-num').innerText = level;
+    document.getElementById('game-screen').classList.remove('show-year'); 
+    document.getElementById('submit-btn').style.display = 'block';
+    document.getElementById('next-btn').style.display = 'none';
+    document.getElementById('feedback').innerText = "";
+    currentLevelBase = 40; 
+    
+    let selected = [];
+    let tempDb = [...masterDatabase];
+    for(let i=0; i<5; i++) {
+        let r = Math.floor(Math.random() * tempDb.length);
+        selected.push(tempDb.splice(r, 1)[0]);
+    }
+    
+    correctOrder = [...selected].sort((a, b) => a.year - b.year);
+    let displayItems = [...selected].sort(() => Math.random() - 0.5);
+
+    const list = document.getElementById('sortable-list');
+    list.innerHTML = "";
+    displayItems.forEach(i => {
+        const li = document.createElement('li');
+        li.className = 'item'; 
+        li.dataset.year = i.year; 
+        li.innerHTML = `${i.text} <span class="year-text">(${formatYearString(i.year)})</span>`;
+        list.appendChild(li);
+    });
+
+    if (window.gameSortable) window.gameSortable.destroy(); 
+    window.gameSortable = new Sortable(list, { 
+        animation: 200,
+        onStart: () => sounds.click()
+    });
+
+    startTime = Date.now();
+    timerRunning = true;
+    updateTimer();
+}
+
+function updateTimer() {
+    if (!timerRunning) return;
+    const now = (Date.now() - startTime) / 1000;
+    document.getElementById('timer').innerText = now.toFixed(1) + "s";
+    requestAnimationFrame(updateTimer);
+}
+
+document.getElementById('submit-btn').addEventListener('click', () => {
+    const items = document.querySelectorAll('.item');
+    const userYears = [...items].map(li => parseFloat(li.dataset.year));
+    let allCorrect = true;
+
+    userYears.forEach((y, index) => {
+        if (y === correctOrder[index].year) {
+            items[index].classList.add('correct-glow');
+        } else {
+            allCorrect = false;
+            items[index].classList.remove('correct-glow');
+        }
+    });
+
+    if (allCorrect) {
+        timerRunning = false;
+        sounds.correct(); 
+        document.getElementById('game-screen').classList.add('show-year'); 
+        
+        const timeUsed = (Date.now() - startTime) / 1000;
+        let bonus = 0;
+        if (currentLevelBase === 40) { 
+            bonus = (timeUsed <= 10) ? 30 : (timeUsed <= 15) ? 15 : (timeUsed <= 25) ? 5 : 0;
+        }
+        
+        score += (currentLevelBase + bonus);
+        document.getElementById('score-num').innerText = score;
+        
+        let msg = bonus > 0 ? `🔥 極速獎勵！得到 ${currentLevelBase + bonus} 分` : `✅ 正確！得到 ${currentLevelBase} 分`;
+        document.getElementById('feedback').innerHTML = `<span style="color:var(--success)">${msg}</span>`;
+        
+        document.getElementById('submit-btn').style.display = 'none';
+        document.getElementById('next-btn').style.display = 'block';
+        window.gameSortable.option("disabled", true);
+
+        let timeLeft = 10;
+        document.getElementById('auto-timer').innerText = `(${timeLeft}s)`;
+        autoNextInterval = setInterval(() => {
+            timeLeft--;
+            document.getElementById('auto-timer').innerText = `(${timeLeft}s)`;
+            if (timeLeft <= 0) { clearAutoNext(); nextLevel(); }
+        }, 1000);
+    } else {
+        sounds.wrong(); 
+        currentLevelBase = Math.max(0, currentLevelBase - 10);
+        document.getElementById('feedback').innerHTML = `<span style="color:var(--danger)">❌ 部分順序有誤，已鎖定正確項目！</span>`;
+    }
+});
+
+function clearAutoNext() { if (autoNextInterval) clearInterval(autoNextInterval); }
+function nextLevel() { 
+    sounds.click(); 
+    level++; 
+    startLevel(); 
+}
+
+function finishGame() {
+    sounds.finish(); 
+    document.getElementById('overlay').classList.add('show');
+    initParticles();
+    animateScore(0, score, 2000);
+    
+    let rank = "🐣 以為珍寶島盛產珍寶珠的人", activeId = "r8";
+    if (score >= 670) { rank = "💎 民國穿越者"; activeId = "r1"; }
+    else if (score >= 620) { rank = "🔥 史學大宗師"; activeId = "r2"; }
+    else if (score >= 570) { rank = "📜 歷史系教授"; activeId = "r3"; }
+    else if (score >= 520) { rank = "✍️ 中史科老師"; activeId = "r4"; }
+    else if (score >= 470) { rank = "🧭 5星星考生"; activeId = "r5"; }
+    else if (score >= 420) { rank = "🔍 合格線上的學生"; activeId = "r6"; }
+    else if (score >= 370) { rank = "👤 歷史課打瞌睡專家"; activeId = "r7"; }
+    
+    document.getElementById('rank-text').innerText = rank;
+    document.querySelectorAll('.rank-row').forEach(el => el.classList.remove('current-rank'));
+    document.getElementById(activeId).classList.add('current-rank');
+
+    if(localStorage.getItem('saved_class')) document.getElementById('player-class').value = localStorage.getItem('saved_class');
+    if(localStorage.getItem('saved_name')) document.getElementById('player-name').value = localStorage.getItem('saved_name');
+}
+
+function animateScore(s, e, d) {
+    const obj = document.getElementById("final-score");
+    let st = null;
+    function step(ts) {
+        if (!st) st = ts;
+        const pr = Math.min((ts - st) / d, 1);
+        obj.innerText = Math.floor(pr * (e - s) + s);
+        if (pr < 1) requestAnimationFrame(step);
+        else obj.innerText = e;
+    }
+    requestAnimationFrame(step);
+}
+
+function initParticles() {
+    const canvas = document.getElementById('particle-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    let p = [];
+    for (let i = 0; i < 50; i++) p.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height, r:Math.random()*3+1, c:`rgba(241,196,15,${Math.random()*0.5+0.2})`, s:Math.random()*1+0.5});
+    function draw() {
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        p.forEach(i => { ctx.beginPath(); ctx.arc(i.x, i.y, i.r, 0, Math.PI*2); ctx.fillStyle=i.c; ctx.fill(); i.y -= i.s; if(i.y < -10) i.y = canvas.height + 10; });
+        if(document.getElementById('overlay').classList.contains('show')) requestAnimationFrame(draw);
+    }
+    draw();
+}
+
+function saveScore() {
+    const classVal = document.getElementById('player-class').value;
+    const nameVal = document.getElementById('player-name').value.trim();
+    if (!classVal || !nameVal) return alert("請完整填寫班別與姓名！");
+    localStorage.setItem('saved_class', classVal);
+    localStorage.setItem('saved_name', nameVal);
+    const btn = document.getElementById('sync-btn');
+    btn.innerText = "同步中..."; btn.disabled = true;
+    fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ className: classVal, name: nameVal, score: score }) })
+    .then(() => { alert("紀錄已成功同步！"); document.getElementById('name-input-group').style.display = 'none'; document.getElementById('restart-btn').style.display = 'inline-block'; })
+    .catch(() => { alert("同步失敗！"); btn.innerText = "提交紀錄並同步"; btn.disabled = false; });
+}
+
+// 統一綁定內部事件監聽器
+document.getElementById('btn-start').addEventListener('click', startGame);
+document.getElementById('next-btn').addEventListener('click', () => { clearAutoNext(); nextLevel(); });
+document.getElementById('sync-btn').addEventListener('click', saveScore);
+
+})(); // 👈 IIFE 閉包結束
+</script>
+</body>
+</html>
